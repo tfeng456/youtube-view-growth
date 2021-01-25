@@ -4,6 +4,7 @@ author: "Tiffany Feng, Eustina Kim"
 date: "12/6/2020"
 output: pdf_document
 ---
+#note: this is not our final model. The final model can be found in the written report.
 
 ```{r,message=FALSE}
 library(tidyverse)
