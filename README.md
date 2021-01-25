@@ -1,5 +1,5 @@
 # predicting-youtube-view-growth
-Using Random Forest methods in R. by Tiffany Feng & Eustina Kim
+Using Random Forest methods in R. Project by Tiffany Feng & Eustina Kim.
 
 Kaggle competition link: https://www.kaggle.com/c/stats101c-lec4-final-competition/overview
 
