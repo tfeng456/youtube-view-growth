@@ -1,0 +1,143 @@
+---
+title: "Youtube predictions - Boosting with adjusted shrinkage"
+author: "Tiffany Feng"
+date: "12/8/2020"
+output: html_document
+---
+
+```{r,message=FALSE}
+library(tidyverse)
+library(caret)
+library(randomForest)
+library(lubridate)
+library(gbm)
+```
+
+```{r}
+train <- read.csv("training.csv")
+test <- read.csv("test.csv")
+train <- train %>% select(-id)
+ID <- test$id
+test <- test %>% select(-id)
+```
+
+#working with PublishedDate
+```{r}
+# split PubDate into date and time
+train <- train %>% separate(PublishedDate,c("PublishedDate","PublishedTime"),sep = " ")
+test <- test %>% separate(PublishedDate,c("PublishedDate","PublishedTime"),sep = " ")
+```
+```{r}
+#change into proper date
+train$PublishedDate <- as.Date(train$PublishedDate,format = "%m/%d/%y")
+test$PublishedDate <- as.Date(test$PublishedDate,format = "%m/%d/%y")
+```
+```{r}
+#get which day of the week
+train$which_day <- wday(train$PublishedDate)
+test$which_day <- wday(test$PublishedDate)
+```
+```{r}
+#make columns month and day
+train$month <- as.numeric(format(train$PublishedDate, format = "%m"))
+train$day <- as.numeric(format(train$PublishedDate, format = "%d"))
+test$month <- as.numeric(format(test$PublishedDate, format = "%m"))
+test$day <- as.numeric(format(test$PublishedDate, format = "%d"))
+```
+```{r}
+#get the hour
+#Time <- factor(train$PublishedTime)
+train$hour <- as.numeric(format(as.POSIXct(train$PublishedTime,format="%H:%M"),"%H"))
+test$hour <- as.numeric(format(as.POSIXct(test$PublishedTime,format="%H:%M"),"%H"))
+```
+
+#get rid of PublishedDate, PublishedTime
+```{r}
+train <- train %>% select(-c(PublishedDate,PublishedTime))
+test <- test %>% select(-c(PublishedDate,PublishedTime))
+```
+
+#Important predictors
+```{r}
+imp_vars <- read.csv("imp37.csv")
+imp_vars <- imp_vars$imp_vars
+```
+
+```{r}
+trainImp <- train[,c(imp_vars,"growth_2_6")]
+```
+```{r}
+testImp <- test[,c(imp_vars)]
+```
+
+
+# Boosting
+
+#split data
+```{r}
+set.seed(123)
+idx <- sample(seq(nrow(trainImp)), size = 0.7*nrow(trainImp), replace=FALSE)
+trainImp_train <- trainImp[idx,]
+trainImp_valid <- trainImp[-idx,]
+```
+
+# validation
+```{r}
+lambdas_vec <- seq(0, 0.1, 0.002)
+train_mse <- vector()
+
+for(i in 1:length(lambdas_vec)){
+  boost_mod_test = gbm(growth_2_6~., data = trainImp_train, n.trees = 10000, 
+                   distribution = "gaussian", interaction.depth = 4,
+                   shrinkage = lambdas_vec[i], verbose = F)
+yhat.boost = predict(boost_mod_test, newdata = trainImp_valid,
+                    n.trees =10000)
+
+train_mse[i] <- mean((yhat.boost - trainImp_valid$growth_2_6)^2)
+}
+
+plot(lambdas_vec, train_mse, type = 'l',
+       xlab = "shrinkage value (lambda)", ylab = "train MSE")
+```
+
+```{r}
+lambdas_mse <- data.frame(cbind(lambdas_vec, train_mse))
+lambdas_mse %>% filter(train_mse == min(train_mse)) # best lambda is 0.008
+```
+
+```{r}
+boost_mod_shrink_val = gbm(growth_2_6~., data = trainImp_train, distribution= "gaussian",
+                   n.trees = 10000, interaction.depth = 4, shrinkage = 0.008,
+                  verbose = F)
+
+yhat.boost.shrink.val = predict(boost_mod_shrink_val, newdata = trainImp_valid,
+                     n.trees =10000)
+
+RMSE(yhat.boost.shrink.val, trainImp_valid$growth_2_6) # 1.499343
+```
+
+# full data
+
+```{r}
+boost_mod_shrink = gbm(growth_2_6~., data = trainImp, distribution= "gaussian",
+                   n.trees = 10000, interaction.depth = 4, shrinkage = 0.008,
+                  verbose = F)
+summary(boost_mod_shrink)
+yhat.boost.shrink = predict(boost_mod_shrink, newdata = testImp,
+                     n.trees =10000)
+
+```
+
+#predictions
+```{r}
+final_boost_shrink2 <- data.frame("id" = ID, "growth_2_6" = yhat.boost.shrink)
+```
+
+# Kaggle RMSE 1.43671
+```{r}
+write.csv(final_boost_shrink2, 
+          "boost_shrink2.csv",
+          row.names = FALSE) 
+```
+
+
