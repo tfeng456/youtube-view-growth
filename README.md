@@ -1,4 +1,5 @@
 # predicting-youtube-view-growth
+Using Random Forest methods in R.
 by Tiffany Feng & Eustina Kim
 
 ## Introduction
