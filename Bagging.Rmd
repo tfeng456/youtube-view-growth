@@ -1,0 +1,123 @@
+---
+title: "Youtube predictions - Bagging"
+author: "Tiffany Feng, Eustina Kim"
+date: "12/6/2020"
+output: pdf_document
+---
+
+```{r,message=FALSE}
+library(tidyverse)
+library(caret)
+library(randomForest)
+library(lubridate)
+```
+
+```{r}
+train <- read.csv("training.csv")
+test <- read.csv("test.csv")
+train <- train %>% select(-id)
+ID <- test$id
+test <- test %>% select(-id)
+```
+
+#working with PublishedDate
+```{r}
+# split PubDate into date and time
+train <- train %>% separate(PublishedDate,c("PublishedDate","PublishedTime"),sep = " ")
+test <- test %>% separate(PublishedDate,c("PublishedDate","PublishedTime"),sep = " ")
+```
+```{r}
+#change into proper date
+train$PublishedDate <- as.Date(train$PublishedDate,format = "%m/%d/%y")
+test$PublishedDate <- as.Date(test$PublishedDate,format = "%m/%d/%y")
+```
+```{r}
+#get which day of the week
+train$which_day <- wday(train$PublishedDate)
+test$which_day <- wday(test$PublishedDate)
+```
+```{r}
+#make columns month and day
+train$month <- as.numeric(format(train$PublishedDate, format = "%m"))
+train$day <- as.numeric(format(train$PublishedDate, format = "%d"))
+test$month <- as.numeric(format(test$PublishedDate, format = "%m"))
+test$day <- as.numeric(format(test$PublishedDate, format = "%d"))
+```
+```{r}
+#get the minutes: hour*60 + minutes
+
+train$hour_min <- 60*as.numeric(format(as.POSIXct(train$PublishedTime,format="%H:%M"),"%H")) +
+  as.numeric(format(as.POSIXct(train$PublishedTime,format="%H:%M"),"%M"))
+test$hour_min <- 60*as.numeric(format(as.POSIXct(test$PublishedTime,format="%H:%M"),"%H")) +
+  as.numeric(format(as.POSIXct(test$PublishedTime,format="%H:%M"),"%M"))
+```
+
+#get rid of PublishedDate, PublishedTime
+```{r}
+train <- train %>% select(-c(PublishedDate,PublishedTime))
+test <- test %>% select(-c(PublishedDate,PublishedTime))
+```
+
+
+#do random forst recursive feature elimination to find important variables
+# (best is 34 predictors. RMSE is 1.484)
+
+#mtry 261 (bagging: m = # of predictors)
+
+```{r}
+set.seed(1)
+trys <- c(261)
+rmse <- rep(NA,length(trys))
+
+for(i in 1:length(trys)){
+  rf <- randomForest(growth_2_6~.,mtry=trys[i], data = train, importance = T, ntree = 500)
+  rmse[i] <- sqrt(mean(rf$mse[length(rf$mse)])) #find rmse
+}
+
+# rf <- randomForest(growth_2_6~.,mtry=trys[i], data = train,importance = T, ntree = 500)
+# rmse[i] <- sqrt(mean(rf$mse[length(rf$mse)])) #find rmse
+```
+
+```{r}
+print(rmse)
+trys[which.min(rmse)] # mtry = 261 gives RMSE of 1.47982
+```
+
+# Get top 40 predictors from varImp function, which finds the importance of each predictor:
+
+```{r}
+varImp(rf, type = 1, scale = F) 
+
+bag_top_variables <- names(sort(rf$importance[,1], decreasing = T)[1:40])
+varImpPlot(rf, type = 1)
+```
+
+```{r}
+trainImp <- train[,c(bag_top_variables,"growth_2_6")]
+```
+```{r}
+testImp <- test[,c(bag_top_variables)]
+```
+
+#fit bagging model
+```{r}
+final_mod <- randomForest(growth_2_6~.,mtry= 40, data = trainImp,
+importance = T, ntree = 500)
+```
+
+```{r}
+print(final_mod)
+```
+
+#predictions
+```{r}
+bagging_pred2 = predict(final_mod, test)
+final <- data.frame("id" = ID, "growth_2_6" = bagging_pred2)
+```
+
+```{r}
+write.csv(final, 
+          "bagging2.csv",
+          row.names = FALSE)
+```
+
